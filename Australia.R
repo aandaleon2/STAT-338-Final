@@ -13,10 +13,11 @@ library(randomForest)
 library(gam)
 library(gamclass)
 library(tidyr)
+library(mice)
 
 # Reading in data
-train = read.csv("C:/Users/patri/OneDrive/School Files/3rd Year College/STAT 338/Final Project/australia_train.csv")
-test = read.csv("C:/Users/patri/OneDrive/School Files/3rd Year College/STAT 338/Final Project/australia_test.csv")
+train = read.csv("C:/Users/patri/Desktop/R Studio Files/STAT-338-Final/australia_train.csv")
+test = read.csv("C:/Users/patri/Desktop/R Studio Files/STAT-338-Final/australia_test.csv")
 
 data.frame("NA Count" = sapply(train, function(x) {return(sum(is.na(x)))}))
 str(train)
@@ -37,9 +38,35 @@ process = function(df) {
   #   df$rain_tomorrow = as.factor(df$rain_tomorrow)
   # }
   df$date = as.Date(df$date)
+  df$evaporation = as.integer(df$evaporation)
+  df$sunshine = as.integer(df$sunshine)
   
-  # Filling in NA values (currently this just fills in NAs with data from previous day
-  # but could replace this with a better method later)
+  # Translate city to state for location
+  in_victoria = c('Sale', 'Nhil', 'Watsonia', 'Richmond', 'Portland', 'Dartmoor',
+                  'Ballarat', 'Bendigo', 'MelbourneAirport', 'Mildura', 'Melbourne')
+  in_nsw = c('BadgerysCreek', 'WaggaWagga', 'Wollongong', 'Moree', 'SydneyAirport',
+             'Sydney', 'Albury', 'Penrith', 'CoffsHarbour', 'Williamtown', 'Cobar',
+             'NorahHead', 'Newcastle')
+  in_queensland = c('Townsville', 'GoldCoast', 'Brisbane', 'Cairns')
+  in_northern_territory = c('Uluru', 'AliceSprings', 'Katherine', 'Darwin')
+  in_south_australia = c('Nuriootpa', 'MountGambier', 'Woomera', 'Adelaide')
+  in_west_australia = c('Albany', 'Perth', 'PearceRAAF', 'Walpole', 'SalmonGums', 
+                        'PerthAirport', 'Witchcliffe')
+  in_capital = c('Tuggeranong', 'MountGinini', 'Canberra')
+  in_other = c('Launceston', 'Hobart', 'NorfolkIsland')
+  
+  df[df$location %in% in_victoria,'state'] = 'Victoria'
+  df[df$location %in% in_nsw,'state'] = 'New South Wales'
+  df[df$location %in% in_queensland,'state'] = 'Queensland'
+  df[df$location %in% in_northern_territory,'state'] = 'Northern Territory'
+  df[df$location %in% in_south_australia,'state'] = 'South Australia'
+  df[df$location %in% in_west_australia,'state'] = 'West Australia'
+  df[df$location %in% in_capital,'state'] = 'Capital Territory'
+  df[df$location %in% in_other,'state'] = 'Other'
+  
+  # Filling in NA values (uses mice first and then LOCF for anything that mice misses)
+  mids = mice(df)
+  df = complete(mids)
   df = df %>% fill(min_temp, max_temp, rainfall, evaporation, sunshine, wind_gust_dir,
                    wind_gust_speed, wind_dir9am, wind_dir3pm, wind_speed9am, wind_speed3pm,
                    humidity9am, humidity3pm, pressure9am, pressure3pm, cloud9am, cloud3pm,
@@ -53,12 +80,12 @@ process = function(df) {
   df[,'Delta_Temp'] = df$temp3pm - df$temp9am
   
   # Dummy variables for categorical features (include location/region?)
-  dummy_gen = dummyVars("~wind_gust_dir + wind_dir9am + wind_dir3pm", data = df)
+  dummy_gen = dummyVars("~wind_gust_dir + wind_dir9am + wind_dir3pm + state", data = df)
   dummies = data.frame(predict(dummy_gen, df))
   df = cbind(df, dummies)
   
   # Drop original columns that were used for dummy vars
-  to_remove = c("wind_dir3pm", "wind_dir9am", "wind_gust_dir", "location")
+  to_remove = c("wind_dir3pm", "wind_dir9am", "wind_gust_dir", "location", 'state')
   df = df[,!names(df) %in% to_remove]
   
   # Select columns to normalize
@@ -91,6 +118,24 @@ res_test = process(test)
 test = res_test[[1]]
 test_binned = res_test[[2]]
 
+# EDA
+mosaicplot(rain_tomorrow~rain_today, data=train)
+mosaicplot(rain_tomorrow~sunshine, data=train)
+mosaicplot(rain_tomorrow~evaporation, data=train)
+
+ggplot(data = train, aes(x=humidity3pm, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=rain_today, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=Delta_Humidity, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=wind_gust_speed, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=cloud9am, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=cloud3pm, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=Delta_Temp, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=Delta_Cloud, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=pressure3pm, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=wind_speed3pm, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=Delta_Pressure, y=rain_tomorrow)) + geom_violin()
+ggplot(data = train, aes(x=rainfall, y=rain_tomorrow)) + geom_point()
+
 # Variable selection
 full_formula = generate_formula("rain_tomorrow", 
                                 names(train)[!names(train) %in% 
@@ -107,7 +152,7 @@ lasso_model = glmnet(x_train, y, alpha=1, lambda=lasso_select$lambda.1se)
 lasso_model$beta
 
 # CART
-train$rain_tomorrow = as.factor(train$rain_tomorrow)
+# train$rain_tomorrow = as.factor(train$rain_tomorrow)
 tree = rpart(full_formula, data = train)
 rpart.plot(tree)
 par(mar=c(4,13,1,1)) # Sets margins for plot
@@ -124,6 +169,11 @@ rf_preds = predict(rf_model, sample_train_binned)
 rf_accuracy = accuracy(sample_train_binned$rain_tomorrow, rf_preds)
 plot(rf_model)
 varImpPlot(rf_model)
+
+rf_predictors = c("humidity3pm", "rain_today", "Delta_Humidity", "wind_gust_speed",
+                  "cloud9am", "cloud3pm", "Delta_Temp", "Delta_Cloud", "pressure3pm",
+                  "wind_speed3pm", "Delta_Pressure", "stateNew.South.Wales", 
+                  "Delta_Wind_Speed", "sunshine")
 
 # SVM
 svm_model = svm(full_formula, data = sample_train,
@@ -157,33 +207,81 @@ print(paste("Cross validation log loss:", cv_ll))
 
 
 
-#### Catboost (try using numeric vs binned features)
-df_cat = train_binned
+#### Catboost tuning
+df_cat = train
 k = 10
-folds = sample(1:k, nrow(df), replace=T)
-logloss_list_cat = rep(0, k)
-iters = seq(100, 300, by=5)
-iters_list = data.frame(iters = iters, logloss = 0)
-for (iter in iters) {
-  for (i in 1:k) {
-    train2 = df_cat[folds!=i,]
-    test2 = df_cat[folds==i,]
-    features = train2[,!names(train2) %in% c('id', 'date', 'rain_tomorrow')]
-    labels = train2$rain_tomorrow
-    train_pool = catboost.load_pool(data = as.matrix(features), label = labels)
-    real_pool = catboost.load_pool(test2[,!names(test2) %in% c('id', 'date')])
-    model <- catboost.train(train_pool,  NULL,
-                            params = list(loss_function = 'Logloss',
-                                          iterations = iter,
-                                          prediction_type = 'Probability',
-                                          class_weights=c(.5,2), logging_level='Silent'))
-    prediction = catboost.predict(model, real_pool, prediction_type='Probability')
-    logloss = logLoss(as.numeric(test2$rain_tomorrow), prediction)
-    logloss_list_cat[i] = logloss
-  }
-  cv_ll_cat = mean(logloss_list_cat)
-  print(paste("Cross validation log loss:", cv_ll_cat, "#Iterations:", iter))
-  iters_list[iters_list$iters == iter,'logloss'] = cv_ll_cat
+folds = sample(1:k, nrow(df_cat), replace=T)
+depths = seq(3.5, 5, by=0.1)
+depths_list = data.frame(depth = depths, logloss = 0)
+for (depth in depths) {
+  features = df_cat[,!names(df_cat) %in% c('id', 'date', 'rain_tomorrow')]
+  labels = as.integer(df_cat$rain_tomorrow)
+  train_pool = catboost.load_pool(data = as.matrix(features), label = labels)
+  res = catboost.cv(train_pool,  fold_count=k, stratified=TRUE,
+                    params = list(loss_function = 'Logloss',
+                                  iterations = 600,
+                                  prediction_type = 'Probability',
+                                  depth=8,
+                                  class_weights=c(depth,1), logging_level='Silent'))
+  cv_ll_cat = min(res$test.Logloss.mean)
+  print(paste("Cross validation log loss:", cv_ll_cat))
+  depths_list[depths_list$depth == depth,'logloss'] = cv_ll_cat
 }
-ggplot(data = iters_list, aes(x=iters, y=logloss)) + geom_point() + geom_smooth()
+ggplot(data = depths_list, aes(x=depth, y=logloss)) + geom_point() + geom_smooth()
 
+# Testing different feature sets
+cv_cat = function(x_train, y_train, iters=600, k=5, depth=8, weight=3.5) {
+  features = x_train[,!names(x_train) %in% c('id', 'date', 'rain_tomorrow')]
+  labels = as.integer(y_train)
+  train_pool = catboost.load_pool(data = as.matrix(features), label = labels)
+  results = catboost.cv(train_pool,  fold_count=k, stratified=FALSE,
+                        params = list(loss_function = 'Logloss',
+                                      iterations = iters,
+                                      prediction_type = 'Probability',
+                                      depth=depth,
+                                      class_weights=c(weight,1), logging_level='Silent'))
+  return(results)
+}
+df1 = train # All predictors
+df2 = train[,colnames(x_train)[which(!lasso_model$beta == 0)]] # Lasso selected predictors
+df3 = train_binned[,rf_model$importance[order(rf_model$importance),1] %>% tail(50) %>% names] # Random forest predictors (20 highest importance from rf_model)
+df4 = train[,rf_predictors] # Unbinned predictors from random forest
+df5 = cbind(df3, df4) # Combination of both binned and unbinned predictors
+dfs = list('FULL' = df1, 'LASSO' = df2, 'BINNED RF' = df3, 'UNBINNED RF' = df4, 'COMBO' = df5)
+y = train$rain_tomorrow
+counter = 1
+for (df in dfs) {
+  res = cv_cat(df, y, iters=1000)
+  min_ll = min(res$test.Logloss.mean)
+  print(ggplot(data = res, aes(x=c(1:nrow(res)), y=test.Logloss.mean)) + geom_line() +
+          geom_ribbon(aes(ymin=test.Logloss.mean-test.Logloss.std, 
+                          ymax=test.Logloss.mean+test.Logloss.std,
+                          fill='red'), alpha=0.3) + 
+          labs(title=paste('Cross validation error over training iterations using', 
+                           names(dfs[counter]), 'dataset'),
+               x='Iteration', y='Test Logloss Mean', fill='Std. Err.', 
+               caption=paste('Min logLoss:',min_ll)))
+  print(paste('Min logloss for', names(dfs[counter]), 'dataset:', min_ll))
+  print(paste(names(dfs[counter]), 'reached min after:', 
+              which(res$test.Logloss.mean == min_ll), 'iterations'))
+  counter = counter + 1
+}
+
+
+#### Logistic regression
+logistic_model = glm(y~x_train, family='binomial')
+
+# Submission generation code 
+features = df1[,!names(df1) %in% c('id', 'date', 'rain_tomorrow')]
+labels = as.integer(y)
+train_pool = catboost.load_pool(data = as.matrix(features), label = labels)
+real_pool = catboost.load_pool(data = as.matrix(test[,!names(test) %in% c('id', 'date')]))
+final_model = catboost.train(train_pool,
+                          params = list(loss_function = 'Logloss',
+                                        iterations = 900,
+                                        prediction_type = 'Probability',
+                                        depth=8,
+                                        class_weights=c(1.2,1), logging_level='Silent'))
+predicted_final = catboost.predict(final_model, real_pool, prediction_type='Probability')
+submission = data.frame(id=test$id, rain_tomorrow = predicted_final)
+write.csv(submission, 'australia_submission.csv', row.names=F)
