@@ -1,0 +1,111 @@
+---
+title: "STAT 338 - Rainfall"
+author: "Annemarie Andaleon"
+date: "12/14/2021"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r}
+train.full <- read.csv("C:/Users/Annemarie Andaleon/Desktop/Loyola University Chicago/Junior Year/Fall/STAT 488/FInal/rainfall/train.csv")
+test.full <- read.csv("C:/Users/Annemarie Andaleon/Desktop/Loyola University Chicago/Junior Year/Fall/STAT 488/FInal/rainfall/test.csv")
+
+library(randomForest)
+
+train <- subset(train.full, select = -c(evaporation, sunshine))
+test <- subset(test.full, select = -c(evaporation, sunshine))
+
+#replace missing data that is numeric with the mean
+train$min_temp[is.na(train$min_temp)] <- mean(train$min_temp, na.rm= TRUE)
+train$max_temp[is.na(train$max_temp)] <- mean(train$max_temp, na.rm= TRUE)
+
+train$rainfall[is.na(train$rainfall)] <- mean(train$rainfall, na.rm= TRUE)
+
+train$wind_gust_speed[is.na(train$wind_gust_speed)] <- mean(train$wind_gust_speed, na.rm= TRUE)
+train$wind_speed9am[is.na(train$wind_speed9am)] <- mean(train$wind_speed9am, na.rm= TRUE)
+train$wind_speed3pm[is.na(train$wind_speed3pm)] <- mean(train$wind_speed3pm, na.rm= TRUE)
+
+train$humidity9am[is.na(train$humidity9am)] <- mean(train$humidity9am, na.rm= TRUE)
+train$humidity3pm[is.na(train$humidity3pm)] <- mean(train$humidity3pm, na.rm= TRUE)
+
+train$pressure9am[is.na(train$pressure9am)] <- mean(train$pressure9am, na.rm= TRUE)
+train$pressure3pm[is.na(train$pressure3pm)] <- mean(train$pressure3pm, na.rm= TRUE)
+
+train$cloud9am[is.na(train$cloud9am)] <- mean(train$cloud9am, na.rm= TRUE)
+train$cloud3pm[is.na(train$cloud3pm)] <- mean(train$cloud3pm, na.rm= TRUE)
+
+train$temp9am[is.na(train$temp9am)] <- mean(train$temp9am, na.rm= TRUE)
+train$temp3pm[is.na(train$temp3pm)] <- mean(train$temp3pm, na.rm= TRUE)
+
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+train$wind_gust_dir <- as.factor(train$wind_gust_dir)
+train$wind_dir9am <- as.factor(train$wind_dir9am)
+train$wind_dir3pm <- as.factor(train$wind_dir3pm)
+train$rain_today <- as.factor(train$rain_today)
+
+
+train$wind_gust_dir[is.na(train$wind_gust_dir)] <- getmode(train$wind_gust_dir)
+train$wind_dir9am[is.na(train$wind_dir9am)] <- getmode(train$wind_dir9am)
+train$wind_dir3pm[is.na(train$wind_dir3pm)] <- getmode(train$wind_dir3pm)
+train$rain_today[is.na(train$rain_today)] <- getmode(train$rain_today)
+
+test$min_temp[is.na(test$min_temp)] <- mean(test$min_temp, na.rm= TRUE)
+test$max_temp[is.na(test$max_temp)] <- mean(test$max_temp, na.rm= TRUE)
+
+test$rainfall[is.na(test$rainfall)] <- mean(test$rainfall, na.rm= TRUE)
+
+test$wind_gust_speed[is.na(test$wind_gust_speed)] <- mean(test$wind_gust_speed, na.rm= TRUE)
+test$wind_speed9am[is.na(test$wind_speed9am)] <- mean(test$wind_speed9am, na.rm= TRUE)
+test$wind_speed3pm[is.na(test$wind_speed3pm)] <- mean(test$wind_speed3pm, na.rm= TRUE)
+
+test$humidity9am[is.na(test$humidity9am)] <- mean(test$humidity9am, na.rm= TRUE)
+test$humidity3pm[is.na(test$humidity3pm)] <- mean(test$humidity3pm, na.rm= TRUE)
+
+test$pressure9am[is.na(test$pressure9am)] <- mean(test$pressure9am, na.rm= TRUE)
+test$pressure3pm[is.na(test$pressure3pm)] <- mean(test$pressure3pm, na.rm= TRUE)
+
+test$cloud9am[is.na(test$cloud9am)] <- mean(test$cloud9am, na.rm= TRUE)
+test$cloud3pm[is.na(test$cloud3pm)] <- mean(test$cloud3pm, na.rm= TRUE)
+
+test$temp9am[is.na(test$temp9am)] <- mean(test$temp9am, na.rm= TRUE)
+test$temp3pm[is.na(test$temp3pm)] <- mean(test$temp3pm, na.rm= TRUE)
+
+test$wind_gust_dir <- as.factor(test$wind_gust_dir)
+test$wind_dir9am <- as.factor(test$wind_dir9am)
+test$wind_dir3pm <- as.factor(test$wind_dir3pm)
+test$rain_today <- as.factor(test$rain_today)
+
+
+test$wind_gust_dir[is.na(test$wind_gust_dir)] <- getmode(test$wind_gust_dir)
+test$wind_dir9am[is.na(test$wind_dir9am)] <- getmode(test$wind_dir9am)
+test$wind_dir3pm[is.na(test$wind_dir3pm)] <- getmode(test$wind_dir3pm)
+test$rain_today[is.na(test$rain_today)] <- getmode(test$rain_today)
+
+train$rain_tomorrow <- as.factor(train$rain_tomorrow)
+#random forest
+rf.rain <- randomForest(rain_tomorrow~.-id, data=train)
+
+rain.pred <- predict(rf.rain, test, type= "prob")
+
+
+rain.results <-as.data.frame(cbind(test$id, rain.pred))
+rain.results <- subset(rain.results, select = -c(2))
+
+colnames(rain.results) <- c('id', 'rain_tomorrow')
+print(rain.results)
+
+write.csv(rain.results, "rf_results_finals.csv", row.names = TRUE)
+```
