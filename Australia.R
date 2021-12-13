@@ -118,7 +118,7 @@ res_test = process(test)
 test = res_test[[1]]
 test_binned = res_test[[2]]
 
-# EDA
+# Plots
 mosaicplot(rain_tomorrow~rain_today, data=train)
 mosaicplot(rain_tomorrow~sunshine, data=train)
 mosaicplot(rain_tomorrow~evaporation, data=train)

@@ -13,22 +13,13 @@ library(randomForest)
 library(gam)
 library(gamclass)
 
-
-### TODOs
-# 1) Standardize data
-# 2) Try out different feature sets + hyperparameters for models
-# 3) Apply the transformations from EDA section to models
-# 4) Add cross validation to model testing section
-# 5) Generate new features from data to experiment with
-#   5a) Try out NLP model(s) on 'name' feature
-
-
 # Read in data
-train = read.csv("C:/Users/patri/OneDrive/School Files/3rd Year College/STAT 338/Final Project/airbnb_train.csv")
-test = read.csv("C:/Users/patri/OneDrive/School Files/3rd Year College/STAT 338/Final Project/airbnb_test.csv")
+setwd("C:/Users/patri/Desktop/R Studio Files/STAT-338-Final")
+train = read.csv("airbnb_train.csv")
+test = read.csv("airbnb_test.csv")
 
 predictors_num = c('latitude', 'longitude', 'minimum_nights', 'number_of_reviews',
-                   'reviews_per_month', 'calculated_host_listings_count', 'reviews_per_month',
+                   'reviews_per_month', 'calculated_host_listings_count',
                    'availability_365')
 predictors_cat = c('neighbourhood_groupBronx', 'neighbourhood_groupManhattan',
                    'neighbourhood_groupBrooklyn', 'neighbourhood_groupQueens',
@@ -50,48 +41,44 @@ set.seed(123456789)
 
 
 # Data prep ---------------------------------------------------------------
-# Fix data types
-train$last_review = as.Date(train$last_review)
-test$last_review = as.Date(test$last_review)
-
-# Dealing with NA values
-data.frame(sapply(train, function(x) {return(sum(is.na(x)))}))
-data.frame(sapply(test, function(x) {return(sum(is.na(x)))}))
-test[is.na(test$reviews_per_month),'reviews_per_month'] = 0
-test[is.na(test$last_review), 'last_review'] = mean(test$last_review, na.rm=T)
-train[is.na(train$reviews_per_month),'reviews_per_month'] = 0
-train[is.na(train$last_review), 'last_review'] = mean(train$last_review, na.rm=T)
-
-# Dummy variables
-dummy_gen_train = dummyVars("~neighbourhood_group + room_type", data = train)
-dummies_train = data.frame(predict(dummy_gen_train, train))
-train = cbind(train, dummies_train)
-
-dummy_gen_test = dummyVars("~neighbourhood_group + room_type", data = test)
-dummies_test = data.frame(predict(dummy_gen_test, test))
-test = cbind(test, dummies_test)
-
-# Binning continuous variables 
-# note: right now binning is done separately, need to make sure train/test have same bins
-num_to_cat_train = data.frame(sapply(train[,predictors_num], cut, breaks=5, axis=1))
-dummy_gen_bin_train = dummyVars(generate_formula("", predictors_num), data = num_to_cat_train)
-dummies_bin_train = data.frame(predict(dummy_gen_bin_train, num_to_cat_train))
-train = cbind(train, dummies_bin_train)
-
-num_to_cat_test = data.frame(sapply(test[,predictors_num], cut, breaks=5, axis=1))
-dummy_gen_bin_test = dummyVars(generate_formula("", predictors_num), data = num_to_cat_test)
-dummies_bin_test = data.frame(predict(dummy_gen_bin_test, num_to_cat_test))
-test = cbind(test, dummies_bin_test)
-
-# Test area for NLP stuff
-train[,'Cozy_name'] = sapply(train$name, str_contains, pattern='cozy', ignore.case=TRUE)
-train[,'Private_name'] = sapply(train$name, str_contains, pattern='private', ignore.case=TRUE)
-test[,'Cozy_name'] = sapply(test$name, str_contains, pattern='cozy', ignore.case=TRUE)
-test[,'Private_name'] = sapply(test$name, str_contains, pattern='private', ignore.case=TRUE)
-
+process = function(df) {
+  # Fix data types
+  df$last_review = as.Date(df$last_review)
+  
+  # Dealing with NA values
+  df[is.na(df$reviews_per_month),'reviews_per_month'] = 0
+  df[is.na(df$last_review), 'last_review'] = mean(df$last_review, na.rm=T)
+  
+  # Dummy variables
+  dummy_gen = dummyVars("~neighbourhood_group + room_type", data = df)
+  dummies = data.frame(predict(dummy_gen, df))
+  df = cbind(df, dummies)
+  
+  # Binning continuous variables
+  # num_to_cat = data.frame(sapply(df[,predictors_num], cut, breaks=5, axis=1))
+  # dummy_gen_bin = dummyVars(generate_formula("", predictors_num), data = num_to_cat)
+  # dummies_bin = data.frame(predict(dummy_gen_bin, num_to_cat))
+  # df = cbind(df, dummies_bin)
+  
+  # Extract features from name
+  df[,'Cozy_name'] = sapply(df$name, str_contains, pattern='cozy', ignore.case=TRUE)
+  df[,'Private_name'] = sapply(df$name, str_contains, pattern='private', ignore.case=TRUE)
+  
+  # Normalize continuous vars
+  normalized = data.frame(sapply(df[predictors_num], scale))
+  df = cbind(normalized, df[,!(names(df) %in% c(predictors_num))])
+  
+  # Remove unused features
+  to_remove = c("host_name", "neighbourhood_group", "neighbourhood", "room_type",
+                "name", "last_review")
+  df = df[,!(names(df) %in% to_remove)]
+  
+  return(df)
+}
+train = process(train)
+test = process(test)
 
 # EDA and feature selection -----------------------------------------------
-predictors_binned = names(dummies_bin_train)
 cor(train[,predictors_num], train$price)
 cor(train[,predictors_num], train$price^.5)
 
@@ -116,6 +103,7 @@ tree2 = rpart(generate_formula('price', predictors_cat), data = train)
 rpart.plot(tree2)
 
 tree3 = rpart(generate_formula('price', c(predictors_num,predictors_cat)), data = train)
+par(mar=c(5,13,8,1)) # Sets margins for plot
 rpart.plot(tree3)
 par(mar=c(1,13,1,1)) # Sets margins for plot
 barplot(tree3$variable.importance, horiz=T, las=2, main='Variable Importance', axes=F)
@@ -141,53 +129,60 @@ train2[,'logprice'] = log(train2$price)
 train2[train2$logprice == -Inf,'logprice'] = 0.000001
 
 # Change this to compare different feature sets
-selected_predictors = c(predictors_num, predictors_cat)
-new_formula = as.formula("logprice ~ latitude + log(abs(longitude)) + sqrt(minimum_nights) + 
-                  reviews_per_month + sqrt(calculated_host_listings_count) + 
+all_predictors = c(predictors_num, predictors_cat)
+lasso_predictors = names(x_train)[as.vector(lasso_model$beta) != 0]
+transformed_formula = as.formula("price ~ latitude + log(abs(longitude)) + sqrt(abs(minimum_nights)) + 
+                  reviews_per_month + sqrt(abs(calculated_host_listings_count)) + 
                   availability_365 + number_of_reviews + neighbourhood_groupBronx +
                   neighbourhood_groupManhattan + neighbourhood_groupBrooklyn + 
                   neighbourhood_groupQueens + neighbourhood_groupStaten.Island +
                   room_typeEntire.home.apt + room_typePrivate.room + Cozy_name + Private_name")
+logtrain = train
+logtrain$price = log(logtrain$price)
+logtrain[logtrain$price == -Inf,'price'] = 0.000001
+
 
 # SVM (change change type, nu, gamma, degree, kernel, and cost)
-svm_model = svm(new_formula,
-                data = train2, type='nu-regression', kernel='polynomial',
-                degree=3, nu=.4, gamma=.1)
-predicted_svm = predict(svm_model, test2)
-print(paste("RMSE for SVM model:", rmse(actual, exp(predicted_svm))))
+svm_model = svm(generate_formula('price', all_predictors), data = train, cross=5)
+predicted_svm = predict(svm_model, train)
+print(paste("RMSE for SVM model:", rmsle(train$price, predicted_svm)))
 
-# XGBoost
-xg_model = xgboost(data = as.matrix(train2[,selected_predictors]),
-                   label = train2$price, nrounds = 50)
-predicted_xg = predict(xg_model, as.matrix(test2[,selected_predictors]))
-print(paste("RMSE for XG model:", rmse(actual, predicted_xg)))
-
-# Random Forest (note: currently using all categorical variables for quicker training)
-binned_predictors = c(predictors_cat, predictors_binned)
-rf_model = randomForest(generate_formula('price', binned_predictors),
-                        data = train2)
-predicted_rf = predict(rf_model, test2[,binned_predictors])
-print(paste("RMSE for random forest model:", rmse(actual, predicted_rf)))
+# Random Forest 
+rf_model = randomForest(generate_formula('price', all_predictors), data = train)
+predicted_rf = predict(rf_model, train)
+print(paste("RMSE for random forest model:", rmse(train$price, predicted_rf)))
 varImpPlot(rf_model)
 
 # GAM (using top features from varImpPlot of random forest and cart models)
-gam_model = gam(logprice ~ s(latitude) + s(log(abs(longitude))) + room_typeEntire.home.apt +
-                  neighbourhood_groupManhattan + availability_365..0.365.73. + 
-                  Private_name + room_typePrivate.room + s(sqrt(minimum_nights)) + 
-                  s(reviews_per_month), data = train2)
-predicted_gam = predict(gam_model, test2)
-print(paste("RMSE for GAM model:", rmse(actual, exp(predicted_gam))))
+# gam_model = gam(price ~ s(latitude) + s(log(abs(longitude))) + room_typeEntire.home.apt +
+#                   neighbourhood_groupManhattan + availability_365..0.365.73. + 
+#                   Private_name + room_typePrivate.room + s(sqrt(minimum_nights)) + 
+#                   s(reviews_per_month), data = train)
+gam_model = gam(transformed_formula, data = logtrain)
+predicted_gam = predict(gam_model, train)
+print(paste("RMSE for GAM model:", rmse(train$price, exp(predicted_gam))))
 
-# Cross validation GAM
-gam_model_cv = CVgam(logprice ~ s(latitude) + s(log(abs(longitude))) + room_typeEntire.home.apt +
-                       neighbourhood_groupManhattan + availability_365..0.365.73. + 
-                       Private_name + room_typePrivate.room + s(sqrt(minimum_nights)) + 
-                       s(reviews_per_month), data=train2, nfold=10)
-print(paste("CV RMSLE for GAM model:", rmsle(train2$price, exp(gam_model_cv$fitted))))
+# Tuning random forest
+results = data.frame("nodesize" = 0, "oob" = 0)
+nodesizes = 3:10
+counter = 1
+for (n in nodesizes) {
+  rf_tune = randomForest(generate_formula('price', all_predictors), data = train,
+                         nodesize = n, mtry = m)
+  results[counter,] = c(m, n, mean(rf_tune$oob.times))
+  print(paste("M:", m, "N:", n, "OOB:", mean(rf_tune$oob.times)))
+  counter = counter + 1
+}
+
+# Final model
+rf_final = randomForest(generate_formula('price', all_predictors), data = train,
+                        nodesize = 10)
+plot(rf_final)
+varImpPlot(rf_final)
 
 # Submission generation code (update with whatever model is used and potentially remove exp transformation)
-#predicted_final = predict(rf_model, test)
-#submission = data.frame(id=test$id, price = exp(predicted_final))
-#write.csv(submission, 'airbnb_submission.csv', row.names=F)
+predicted_final = predict(rf_final, test)
+submission = data.frame(id=test$id, price = predicted_final)
+write.csv(submission, 'airbnb_submission.csv', row.names=F)
 
 
