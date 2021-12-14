@@ -95,11 +95,20 @@ test$wind_dir3pm[is.na(test$wind_dir3pm)] <- getmode(test$wind_dir3pm)
 test$rain_today[is.na(test$rain_today)] <- getmode(test$rain_today)
 
 train$rain_tomorrow <- as.factor(train$rain_tomorrow)
+
 #random forest
-rf.rain <- randomForest(rain_tomorrow~.-id, data=train)
+set.seed(1040)
 
+runs <- 10
+
+rf.rain <- randomForest(rain_tomorrow~.-id, mtry=8, data=train)
+rf.rain
+plot(rf.rain)
+varImpPlot(rf.rain)
+
+
+#predict
 rain.pred <- predict(rf.rain, test, type= "prob")
-
 
 rain.results <-as.data.frame(cbind(test$id, rain.pred))
 rain.results <- subset(rain.results, select = -c(2))
@@ -107,5 +116,5 @@ rain.results <- subset(rain.results, select = -c(2))
 colnames(rain.results) <- c('id', 'rain_tomorrow')
 print(rain.results)
 
-write.csv(rain.results, "rf_results_finals.csv", row.names = TRUE)
+write.csv(rain.results, "rf_results_finals.csv", row.names = FALSE)
 ```
