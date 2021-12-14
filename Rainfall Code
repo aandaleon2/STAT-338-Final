@@ -101,10 +101,10 @@ set.seed(1040)
 
 runs <- 10
 
-rf.rain <- randomForest(rain_tomorrow~.-id, mtry=8, data=train)
+rf.rain <- randomForest(rain_tomorrow~.-id, data=train)
 rf.rain
 plot(rf.rain)
-varImpPlot(rf.rain)
+varImpPlot(rf.rain, title("Variable Importance Plot"))
 
 
 #predict
